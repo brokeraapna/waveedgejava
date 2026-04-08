@@ -1,6 +1,4 @@
-const { connectWebSocket } = require("./websocket-manager");
 const WebSocket = require("ws");
-const axios = require("axios");
 
 let ws;
 
@@ -16,7 +14,6 @@ async function connectWebSocket(getToken) {
   ws.on("open", () => {
     console.log("✅ WebSocket Connected");
 
-    // Subscribe to symbols
     ws.send(JSON.stringify({
       guid: "waveedge",
       method: "sub",
@@ -28,12 +25,11 @@ async function connectWebSocket(getToken) {
   });
 
   ws.on("message", (data) => {
-    const parsed = JSON.parse(data);
-    console.log("📊 Live Data:", parsed);
+    console.log("📊 Live Data:", data.toString());
   });
 
   ws.on("close", () => {
-    console.log("⚠️ WebSocket Disconnected. Reconnecting...");
+    console.log("⚠️ Disconnected. Reconnecting...");
     setTimeout(() => connectWebSocket(getToken), 3000);
   });
 
@@ -43,4 +39,3 @@ async function connectWebSocket(getToken) {
 }
 
 module.exports = { connectWebSocket };
-connectWebSocket(getValidAccessToken);
