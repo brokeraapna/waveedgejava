@@ -3,17 +3,10 @@ const axios = require("axios");
 const fs = require("fs");
 require("dotenv").config();
 
+const { connectWebSocket } = require("./websocket-manager");
+
 const app = express();
 const PORT = process.env.PORT || 3000;
-
-/*
-=============================
-CONFIG (PUT IN .env)
-=============================
-UPSTOX_API_KEY=your_api_key
-UPSTOX_API_SECRET=your_secret
-REDIRECT_URI=https://waveedgejava.onrender.com/callback
-*/
 
 const API_KEY = process.env.UPSTOX_API_KEY;
 const API_SECRET = process.env.UPSTOX_API_SECRET;
@@ -40,43 +33,36 @@ function loadToken() {
 
 /*
 =============================
-OAUTH FLOW
+OAUTH ROUTES
 =============================
 */
 
-// Step 1: Redirect to Upstox Login
 app.get("/login", (req, res) => {
   const url = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${API_KEY}&redirect_uri=${REDIRECT_URI}`;
   res.redirect(url);
 });
 
-// Step 2: Callback → Exchange Code for Token
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
 
-  if (!code) {
-    return res.send("❌ Auth code missing");
-  }
+  if (!code) return res.send("❌ Auth code missing");
 
   try {
     const response = await axios.post(
       "https://api.upstox.com/v2/login/authorization/token",
       {
-        code: code,
+        code,
         client_id: API_KEY,
         client_secret: API_SECRET,
         redirect_uri: REDIRECT_URI,
         grant_type: "authorization_code"
       },
       {
-        headers: {
-          "Content-Type": "application/json"
-        }
+        headers: { "Content-Type": "application/json" }
       }
     );
 
     saveToken(response.data);
-
     res.send("✅ Connected Successfully!");
   } catch (err) {
     console.error(err.response?.data || err.message);
@@ -86,34 +72,22 @@ app.get("/callback", async (req, res) => {
 
 /*
 =============================
-AUTO RECONNECT (IMPORTANT)
+AUTO TOKEN REFRESH
 =============================
 */
 
-// Refresh Token
 async function refreshAccessToken(refresh_token) {
   const response = await axios.post(
     "https://api.upstox.com/v2/login/refresh/token",
-    {
-      refresh_token: refresh_token
-    },
-    {
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }
+    { refresh_token },
+    { headers: { "Content-Type": "application/json" } }
   );
-
   return response.data;
 }
 
-// Get Valid Token (Auto Refresh)
 async function getValidAccessToken() {
   let token = loadToken();
-
-  if (!token) {
-    throw new Error("No token found. Please login.");
-  }
+  if (!token) throw new Error("No token found. Login required.");
 
   const now = Date.now();
   const expiry = token.expires_in * 1000;
@@ -127,30 +101,24 @@ async function getValidAccessToken() {
   return token.access_token;
 }
 
-// Auth Header Helper
 async function authHeader() {
   const access_token = await getValidAccessToken();
-
-  return {
-    Authorization: `Bearer ${access_token}`
-  };
+  return { Authorization: `Bearer ${access_token}` };
 }
 
 /*
 =============================
-TEST API (CHECK TOKEN WORKING)
+TEST API
 =============================
 */
 
 app.get("/profile", async (req, res) => {
   try {
     const headers = await authHeader();
-
     const response = await axios.get(
       "https://api.upstox.com/v2/user/profile",
       { headers }
     );
-
     res.json(response.data);
   } catch (err) {
     console.error(err.response?.data || err.message);
@@ -171,3 +139,11 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+/*
+=============================
+START WEBSOCKET
+=============================
+*/
+
+connectWebSocket(getValidAccessToken);
