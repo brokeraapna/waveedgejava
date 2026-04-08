@@ -1,17 +1,6 @@
 const express = require("express");
 const axios = require("axios");
 const fs = require("fs");
-function saveToken(data) {
-  const tokenData = {
-    ...data,
-    created_at: Date.now()
-  };
-  fs.writeFileSync("token.json", JSON.stringify(tokenData, null, 2));
-}
-
-function loadToken() {
-  if (!fs.existsSync("token.json")) return null;
-  return JSON.parse(fs.readFileSync("token.json"));
 }
 const app = express();
 const PORT = process.env.PORT || 3000;
