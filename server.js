@@ -80,7 +80,7 @@ app.get("/callback", async (req, res) => {
     res.send("✅ Connected Successfully!");
   } catch (err) {
     console.error(err.response?.data || err.message);
-    res.send("❌ Token exchange failed");
+   res.send(err.response?.data || err.message);
   }
 });
 
