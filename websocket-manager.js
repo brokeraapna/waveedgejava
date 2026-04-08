@@ -1,3 +1,4 @@
+const { connectWebSocket } = require("./websocket-manager");
 const WebSocket = require("ws");
 const axios = require("axios");
 
@@ -42,3 +43,4 @@ async function connectWebSocket(getToken) {
 }
 
 module.exports = { connectWebSocket };
+connectWebSocket(getValidAccessToken);
