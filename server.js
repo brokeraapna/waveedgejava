@@ -141,3 +141,5 @@ app.get("/", (req, res) => {
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+console.log("API_KEY:", API_KEY);
+console.log("REDIRECT_URI:", REDIRECT_URI);
