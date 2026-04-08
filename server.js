@@ -1,56 +1,51 @@
 const express = require("express");
 const axios = require("axios");
 const fs = require("fs");
-require("dotenv").config();
+const qs = require("qs");
+const WebSocket = require("ws");
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+const PORT = process.env.PORT || 10000;
 
-/*
-=============================
-CONFIG (PUT IN .env)
-=============================
-UPSTOX_API_KEY=your_api_key
-UPSTOX_API_SECRET=your_secret
-REDIRECT_URI=https://waveedgejava.onrender.com/callback
-*/
-
-const API_KEY = process.env.UPSTOX_API_KEY;
-const API_SECRET = process.env.UPSTOX_API_SECRET;
+// 🔐 ENV VARIABLES
+const API_KEY = process.env.API_KEY;
+const API_SECRET = process.env.API_SECRET;
 const REDIRECT_URI = process.env.REDIRECT_URI;
 
-/*
-=============================
-TOKEN STORAGE
-=============================
-*/
+// 📁 TOKEN FILE
+const TOKEN_FILE = "token.json";
 
+// =========================
+// 🔹 SAVE TOKEN
+// =========================
 function saveToken(data) {
-  const tokenData = {
-    ...data,
-    created_at: Date.now()
-  };
-  fs.writeFileSync("token.json", JSON.stringify(tokenData, null, 2));
+  fs.writeFileSync(TOKEN_FILE, JSON.stringify(data, null, 2));
+  console.log("✅ Token saved");
 }
 
-function loadToken() {
-  if (!fs.existsSync("token.json")) return null;
-  return JSON.parse(fs.readFileSync("token.json"));
+// =========================
+// 🔹 GET TOKEN
+// =========================
+function getToken() {
+  if (!fs.existsSync(TOKEN_FILE)) {
+    console.log("❌ No token found");
+    return null;
+  }
+  const data = JSON.parse(fs.readFileSync(TOKEN_FILE));
+  return data.access_token;
 }
 
-/*
-=============================
-OAUTH FLOW
-=============================
-*/
-
-// Step 1: Redirect to Upstox Login
+// =========================
+// 🔹 LOGIN ROUTE
+// =========================
 app.get("/login", (req, res) => {
-  const url = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${API_KEY}&redirect_uri=${REDIRECT_URI}`;
-  res.redirect(url);
+  const loginUrl = `https://api.upstox.com/v2/login/authorization/dialog?response_type=code&client_id=${API_KEY}&redirect_uri=${REDIRECT_URI}`;
+  res.redirect(loginUrl);
 });
 
-// Step 2: Callback → Exchange Code for Token
+// =========================
+// 🔹 CALLBACK (FIXED)
+// =========================
 app.get("/callback", async (req, res) => {
   const code = req.query.code;
 
@@ -61,16 +56,16 @@ app.get("/callback", async (req, res) => {
   try {
     const response = await axios.post(
       "https://api.upstox.com/v2/login/authorization/token",
-      {
+      qs.stringify({
         code: code,
         client_id: API_KEY,
         client_secret: API_SECRET,
         redirect_uri: REDIRECT_URI,
         grant_type: "authorization_code"
-      },
+      }),
       {
         headers: {
-          "Content-Type": "application/json"
+          "Content-Type": "application/x-www-form-urlencoded"
         }
       }
     );
@@ -79,91 +74,66 @@ app.get("/callback", async (req, res) => {
 
     res.send("✅ Connected Successfully!");
   } catch (err) {
-    console.error(err.response?.data || err.message);
-   res.send(err.response?.data || err.message);
+    console.error("❌ TOKEN ERROR:", err.response?.data || err.message);
+    res.send(JSON.stringify(err.response?.data || err.message));
   }
 });
 
-/*
-=============================
-AUTO RECONNECT (IMPORTANT)
-=============================
-*/
+// =========================
+// 🔹 WEBSOCKET CONNECT
+// =========================
+let ws;
 
-// Refresh Token
-async function refreshAccessToken(refresh_token) {
-  const response = await axios.post(
-    "https://api.upstox.com/v2/login/refresh/token",
-    {
-      refresh_token: refresh_token
-    },
-    {
-      headers: {
-        "Content-Type": "application/json"
-      }
-    }
-  );
-
-  return response.data;
-}
-
-// Get Valid Token (Auto Refresh)
-async function getValidAccessToken() {
-  let token = loadToken();
+async function connectWebSocket() {
+  const token = getToken();
 
   if (!token) {
-    throw new Error("No token found. Please login.");
+    console.log("❌ Token Error: Login required");
+    return;
   }
 
-  const now = Date.now();
-  const expiry = token.expires_in * 1000;
+  ws = new WebSocket("wss://api.upstox.com/v2/feed/market-data", {
+    headers: {
+      Authorization: `Bearer ${token}`
+    }
+  });
 
-  if (now - token.created_at > expiry - 60000) {
-    console.log("⚠️ Token expired, refreshing...");
-    token = await refreshAccessToken(token.refresh_token);
-    saveToken(token);
-  }
+  ws.on("open", () => {
+    console.log("✅ WebSocket Connected");
 
-  return token.access_token;
+    // Example subscribe
+    ws.send(JSON.stringify({
+      guid: "test",
+      method: "sub",
+      data: {
+        mode: "full",
+        instrumentKeys: ["NSE_INDEX|Nifty 50"]
+      }
+    }));
+  });
+
+  ws.on("message", (data) => {
+    console.log("📊 Data:", data.toString());
+  });
+
+  ws.on("close", () => {
+    console.log("⚠️ WS Closed. Reconnecting...");
+    setTimeout(connectWebSocket, 5000);
+  });
+
+  ws.on("error", (err) => {
+    console.log("❌ WS Error:", err.message);
+  });
 }
 
-// Auth Header Helper
-async function authHeader() {
-  const access_token = await getValidAccessToken();
+// =========================
+// 🔹 AUTO START WS
+// =========================
+setTimeout(connectWebSocket, 5000);
 
-  return {
-    Authorization: `Bearer ${access_token}`
-  };
-}
-
-/*
-=============================
-TEST API (CHECK TOKEN WORKING)
-=============================
-*/
-
-app.get("/profile", async (req, res) => {
-  try {
-    const headers = await authHeader();
-
-    const response = await axios.get(
-      "https://api.upstox.com/v2/user/profile",
-      { headers }
-    );
-
-    res.json(response.data);
-  } catch (err) {
-    console.error(err.response?.data || err.message);
-    res.send("❌ API failed");
-  }
-});
-
-/*
-=============================
-SERVER START
-=============================
-*/
-
+// =========================
+// 🔹 SERVER START
+// =========================
 app.get("/", (req, res) => {
   res.send("🚀 WaveEdge Backend Running");
 });
