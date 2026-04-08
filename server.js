@@ -302,12 +302,7 @@ server.listen(PORT, () => {
     console.log('⚠️  No active token. Open the site and click "Connect Upstox" to begin.');
   }
 });
-function saveToken(data) {
-  const tokenData = {
-    ...data,
-    created_at: Date.now()
-  };
-  fs.writeFileSync("token.json", JSON.stringify(tokenData, null, 2));
+
 }
 
 function loadToken() {
