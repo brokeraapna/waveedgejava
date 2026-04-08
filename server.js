@@ -1,3 +1,9 @@
+const express = require("express");
+const axios = require("axios");
+const fs = require("fs");
+
+const app = express();
+const PORT = process.env.PORT || 3000;
 // ============================================================
 // WaveEdge — Main Backend Server (Full Version)
 // Upstox OAuth + Historical + Live + Scanner + Signals + Socket.IO
@@ -295,4 +301,42 @@ server.listen(PORT, () => {
   } else {
     console.log('⚠️  No active token. Open the site and click "Connect Upstox" to begin.');
   }
+});
+function saveToken(data) {
+  const tokenData = {
+    ...data,
+    created_at: Date.now()
+  };
+  fs.writeFileSync("token.json", JSON.stringify(tokenData, null, 2));
+}
+
+function loadToken() {
+  if (!fs.existsSync("token.json")) return null;
+  return JSON.parse(fs.readFileSync("token.json"));
+}
+app.get("/callback", async (req, res) => {
+  const code = req.query.code;
+
+  if (!code) {
+    return res.send("Auth code missing ❌");
+  }
+
+  try {
+    await exchangeCodeForToken(code);
+    res.send("Connected ✅ Token Saved");
+  } catch (err) {
+    res.send("Error: " + err.message);
+  }
+});
+
+app.get("/test", async (req, res) => {
+  try {
+    const token = await getValidAccessToken();
+    res.send("Token working ✅");
+  } catch (err) {
+    res.send(err.message);
+  }
+});
+app.listen(PORT, () => {
+  console.log("Server running on port " + PORT);
 });
